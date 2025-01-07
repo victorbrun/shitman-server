@@ -73,6 +73,12 @@ type Card struct {
 	Suit Suit `json:"suit"`
 }
 
+type PlayedCard struct {
+	Card          Card `json:"card"`
+	PlayedBy      Player
+	PlayedInRound int
+}
+
 func (c Card) String() string {
 	return fmt.Sprintf("{%v of %v}", c.Rank, c.Suit)
 }
@@ -85,11 +91,6 @@ func (c Card) Play(hand *Hand, pf *PlayingField, player string, round int) error
 	} else if _, cardOnField := pf.PlayedCards.Contains(c); cardOnField {
 		return &CardAlreadyPlayedError{}
 	}
-
-	// Places the card on playing field and records metadata
-	pf.PlayedCards.Cards = append(pf.PlayedCards.Cards, c)
-	pf.PlayedBy = append(pf.PlayedBy, player)
-	pf.PlayedInRound = append(pf.PlayedInRound, round)
 
 	// Removes the played card from hand
 	// TODO: is it worth doing atom transactions
@@ -167,17 +168,6 @@ func (d *Deck) Draw(n int) Collection {
 	}
 
 	return Collection{Cards: drawnCards}
-}
-
-type PlayingField struct {
-	PlayedCards   Collection
-	PlayedBy      []string
-	PlayedInRound []int
-}
-
-// Initialises empty playing field
-func NewPlayingField() *PlayingField {
-	return &PlayingField{}
 }
 
 type Hand struct {

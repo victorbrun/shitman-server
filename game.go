@@ -1,39 +1,75 @@
 package main
 
-import "crypto/rsa"
-
 type Player struct {
 	// Metadata
-	ID        string
-	PublicKey *rsa.PublicKey
+	ID string
 
 	// Cards
-	Hand           *Hand
-	DownFacingHand *Hand
-	UpFacingHand   *Hand
+	PrivateHand *Hand
+	PublicHand  *Hand
+	HiddenHand  *Hand
 }
 
 func NewPlayer(id string, deck *Deck) *Player {
 	return &Player{
-		ID:             id,
-		Hand:           NewHand(3, deck),
-		UpFacingHand:   NewHand(3, deck),
-		DownFacingHand: NewHand(3, deck),
+		ID:          id,
+		PublicHand:  NewHand(3, deck),
+		PrivateHand: NewHand(3, deck),
+		HiddenHand:  NewHand(3, deck),
 	}
 }
 
+// Consors the hand such that the information can be
+// communicated to every participant in the game
+func (p *Player) PublicCensor() *Player {
+	return &Player{
+		ID:          p.ID,
+		PrivateHand: nil,
+		PublicHand:  p.PublicHand,
+		HiddenHand:  nil,
+	}
+}
+
+// Censors the hands such that the information can be communicated
+// to the player owning this hand
+func (p *Player) PrivateCensor() *Player {
+	return &Player{
+		ID:          p.ID,
+		PrivateHand: p.PrivateHand,
+		PublicHand:  p.PublicHand,
+		HiddenHand:  nil,
+	}
+}
+
+type PlayingField struct {
+	Deck                *Deck
+	ActivePlayedCards   []PlayedCard
+	InactivePlayedCards []PlayedCard
+}
+
+func NewPlayingField(deck *Deck) *PlayingField {
+	return &PlayingField{
+		Deck:                deck,
+		ActivePlayedCards:   make([]PlayedCard, 0),
+		InactivePlayedCards: make([]PlayedCard, 0),
+	}
+}
+
+// Record of the state of a game at the end of a round
+type GameState struct {
+	Players      []*Player
+	PlayingField *PlayingField
+	Round        int
+}
+
 type Game struct {
-	Players            []*Player
-	ActivePlayingField *PlayingField
-	TurnedCards        *PlayingField
-	Deck               *Deck
-	CurrentRound       int
+	GameStates []*GameState
 }
 
 func NewGame(playerIDs []string) *Game {
 	// Initlaises deck, playing field
 	deck := NewDeck()
-	pf := NewPlayingField()
+	pf := NewPlayingField(deck)
 
 	// Initilaises players with their respective hands
 	players := make([]*Player, len(playerIDs))
@@ -41,20 +77,22 @@ func NewGame(playerIDs []string) *Game {
 		players[ix] = NewPlayer(playerID, deck)
 	}
 
-	return &Game{
-		Players:            players,
-		ActivePlayingField: pf,
-		Deck:               deck,
-		CurrentRound:       0,
+	// Manually creates the initial game state
+	initialGameState := &GameState{
+		Players:      players,
+		PlayingField: pf,
+		Round:        0,
 	}
+
+	// Constructs and returns the game
+	var gameStates []*GameState = []*GameState{initialGameState}
+	return &Game{
+		GameStates: gameStates,
+	}
+
 }
 
-type PublicGameState struct {
-	Players []struct {
-		ID                    string `json:"id"`
-		NumberCardsOnHand     int    `json:"number_cars_on_hand"`
-		NumberDownFacingCards int    `json:"number_down_facing_cards"`
-		UpFacingHand          []Card `json:"up_facing_cards"`
-	}
-	PlayedCards []Card `json:"played_cards"`
+// Increments the game g
+func (g *Game) IncrementGame(playedCards []PlayedCard) {
+
 }
