@@ -12,14 +12,14 @@ func (e *CardAlreadyPlayedError) Error() string {
 	return "card has already been played"
 }
 
-type PEMDecodingError struct{}
+type GameNotInMapError struct{}
 
-func (e *PEMDecodingError) Error() string {
-	return "failed to decode PEM block containing public key"
+func (e *GameNotInMapError) Error() string {
+	return "game is not in map"
 }
 
-type NotRSAPublicKeyError struct{}
+type PlayerAlreadyConnectedError struct{}
 
-func (e *NotRSAPublicKeyError) Error() string {
-	return "not an RSA public key"
+func (e *PlayerAlreadyConnectedError) Error() string {
+	return "player is already connected"
 }

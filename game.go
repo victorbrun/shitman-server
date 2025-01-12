@@ -1,5 +1,14 @@
 package main
 
+type GameStatus int
+
+const (
+	InLobby GameStatus = iota
+	InGame
+	Finished
+	Canceled
+)
+
 type Player struct {
 	// Metadata
 	ID string
@@ -63,7 +72,9 @@ type GameState struct {
 }
 
 type Game struct {
+	ID         string
 	GameStates []*GameState
+	Status     GameState
 }
 
 func NewGame(playerIDs []string) *Game {
