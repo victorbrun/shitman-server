@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestWebSocketServer(t *testing.T) {
 	defer server.Close()
 
 	// Convert test server URL to WebSocket URL
-	wsURL := "ws" + server.URL[len("http:"):]
+	wsURL := server.URL
 
 	// Number of test clients
 	numClients := 3
@@ -35,7 +36,7 @@ func TestWebSocketServer(t *testing.T) {
 
 			// Create a WebSocket client
 			dialer := websocket.Dialer{}
-			conn, _, err := dialer.Dial(wsURL+"?player_id=player"+string(rune(clientID))+"&game_id=testgame", nil)
+			conn, _, err := dialer.Dial(wsURL+"?player_id=player"+strconv.Itoa(clientID)+"&game_id=testgame", nil)
 			if err != nil {
 				t.Fatalf("Client %d: failed to connect: %v", clientID, err)
 			}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -14,6 +16,31 @@ const (
 	Finished
 	Canceled
 )
+
+type GameCommand struct {
+	PlayerId string `json:"player_id"`
+	GameId   string `json:"game_id"`
+	Action   string `json:"game_action"`
+}
+
+type PlayerCommand struct {
+	// Metadata
+	ID string `json:"player_id"`
+
+	// List of cards player wants to play.
+	// The order of the list defines the order
+	// in which the cards ought to be played
+	PlayCards []Card `json:"play_cards"`
+
+	// If card from hidden hand should be played
+	// as last action
+	PlayCardFromHiddenHand bool `json:"play_card_from_hidden_hand"`
+
+	// If top most card from deck ought to be played.
+	// This can only be used when no other card can be played
+	// by the player.
+	PlayRandomCardFromDeck bool `json:"play_random_card_from_deck"`
+}
 
 type Player struct {
 	// Metadata
@@ -132,6 +159,33 @@ func NewPlayingField(deck *Deck) *PlayingField {
 	}
 }
 
+// Returns the top card in tne acive played cards, i.e. the card
+// against which one plays
+func (pf *PlayingField) Top() Card {
+	return pf.ActivePlayedCards[len(pf.ActivePlayedCards)-1].Card
+}
+
+func (pf *PlayingField) TestToPlayCard(card Card) error {
+	// If no active played cards all cards can be played
+	if len(pf.ActivePlayedCards) == 0 {
+		return nil
+	}
+
+	// If card trying to be played is 2 or 10 it can
+	// always be played
+	if card.Rank.Value(true) == 2 || card.Rank.Value(true) == 10 {
+		return nil
+	}
+
+	// Checking skitgubbe rules against top card
+	if card.Rank.Value(true) >= pf.Top().Rank.Value(true) {
+		return nil
+	}
+
+	// If we have not yet returned, the card cannot be played
+	return &CardCannotBePlayedError{CardToPlay: card, CardOnPlayingField: pf.Top()}
+}
+
 type Game struct {
 	// Metadata
 	ID string
@@ -141,10 +195,11 @@ type Game struct {
 	Players []*Player
 
 	// Game data
-	PlayingField *PlayingField
-	Status       GameStatus
-	Round        int
-	PlayOrder    []int
+	PlayingField     *PlayingField
+	Status           GameStatus
+	Round            int
+	PlayOrder        []int
+	WaitingForPlayer string
 }
 
 func NewGame(gameId string) *Game {
@@ -167,6 +222,15 @@ func NewGame(gameId string) *Game {
 
 }
 
+func (g *Game) findPlayerById(playerId string) *Player {
+	for _, p := range g.Players {
+		if p.ID == playerId {
+			return p
+		}
+	}
+	return nil
+}
+
 func (g *Game) AddPlayer(playerId string, playerConn *websocket.Conn) error {
 	// Initilaises player with hands
 	if g.Status != InLobby || g.Round != 0 {
@@ -187,6 +251,37 @@ func (g *Game) AddPlayer(playerId string, playerConn *websocket.Conn) error {
 	return nil
 }
 
+func (g *Game) HandlePlayerConnection(playerId string) {
+	player := g.findPlayerById(playerId)
+	if player == nil {
+		log.Printf("Player %s not found in game %s", playerId, g.ID)
+		return
+	}
+
+	for {
+		_, message, err := player.conn.ReadMessage()
+		if err != nil {
+			log.Printf("Error reading message from player %s: %v", playerId, err)
+			player.conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
+		}
+
+		// Handle the message
+		err = g.handlePlayerMessage(player, message)
+		if err == nil {
+			continue
+		}
+
+		// Error handling
+		switch err.(type) {
+		case *NotGameOwnerError:
+			player.conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
+		case *InvalidArgumentError:
+			player.conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
+		case *NotPlayersTurnError:
+		}
+	}
+}
+
 func (g *Game) Start() error {
 	if g.Status != InLobby {
 		return &GameNotInLobbyError{gameId: g.ID}
@@ -200,18 +295,76 @@ func (g *Game) Start() error {
 }
 
 // Increments the game g
-func (g *Game) Increment(playedCards []PlayedCard) error {
+func (g *Game) Increment(player *Player, cmd PlayerCommand) error {
 	if g.Status != InGame {
 		return &GameNotStartedError{gameId: g.ID}
 	}
 
-	// TODO: play cards
+	for _, card := range cmd.PlayCards {
+		// Test to see if card can be played
+		err := g.PlayingField.TestToPlayCard(card)
+		if err != nil {
+			return &CardCannotBePlayedError{
+				CardToPlay:         card,
+				CardOnPlayingField: g.PlayingField.Top(),
+			}
+		}
+
+		// Playing card
+		err = player.Play(card, g.PlayingField, g.Round)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
 func (g *Game) Run() error {
 	// todo
+
+	return nil
+}
+
+func (g *Game) Terminate() {
+	for _, player := range g.Players {
+		player.conn.Close()
+	}
+}
+
+func (g *Game) handlePlayerMessage(player *Player, message []byte) error {
+	// Tries to decode message as a game command
+	var gameCommand GameCommand
+	err := json.Unmarshal(message, &gameCommand)
+	if err == nil {
+		// Executes game command if player is game owner
+		if player.ID != gameCommand.PlayerId {
+			return &NotGameOwnerError{playerId: player.ID}
+		} else if gameCommand.Action == "start" {
+			g.Start()
+		} else if gameCommand.Action == "terminate" {
+			g.Terminate()
+		} else {
+			return &InvalidArgumentError{arg: gameCommand.Action}
+		}
+	}
+
+	// Tries to decode message as player command
+	var playerCommand PlayerCommand
+	err = json.Unmarshal(message, &playerCommand)
+	if err != nil {
+		return &InvalidArgumentError{arg: message}
+	}
+
+	// Checks if it is player's turn
+	if player.ID != g.WaitingForPlayer {
+		return &NotPlayersTurnError{playerId: player.ID}
+	}
+
+	err = g.Increment(player, playerCommand)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -8,25 +8,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type PlayerCommand struct {
-	// Metadata
-	ID string `json:"player_id"`
-
-	// List of cards player wants to play.
-	// The order of the list defines the order
-	// in which the cards ought to be played
-	PlayCards []Card `json:"play_cards"`
-
-	// If card from hidden hand should be played
-	// as last action
-	PlayCardFromHiddenHand bool `json:"play_card_from_hidden_hand"`
-
-	// If top most card from deck ought to be played.
-	// This can only be used when no other card can be played
-	// by the player.
-	PlayRandomCardFromDeck bool `json:"play_random_card_from_deck"`
-}
-
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -47,7 +28,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	playerId := r.URL.Query().Get("player_id")
 	if playerId == "" {
 		log.Printf("No player ID specified. Closing connection")
-		conn.WriteJSON(http.StatusBadRequest)
+		conn.WriteJSON(map[string]string{"error": "No player ID specified"})
 		conn.Close()
 		return
 	}
@@ -57,17 +38,28 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	if gameId == "" {
 		gameId = uuid.New().String()
 		games[gameId] = NewGame(gameId)
+
 		log.Printf("Created game: %v by player: %v", gameId, playerId)
+		conn.WriteJSON(map[string]string{"message": "Created game successfully", "game_id": gameId})
+
 	} else if _, ok := games[gameId]; !ok {
 		log.Printf("Game: %v does not exist. Closing connection", gameId)
-		conn.WriteJSON(http.StatusNotFound)
+		conn.WriteJSON(map[string]string{"error": "Game does not exist", "game_id": gameId})
 		conn.Close()
 		return
 	}
 
 	// Add player to game
-	games[gameId].AddPlayer(playerId)
+	err = games[gameId].AddPlayer(playerId, conn)
+	if err != nil {
+		log.Printf("Error adding player to game: %v", err)
+		conn.WriteJSON(map[string]string{"error": "Could not add player to game", "player_id": playerId, "game_id": gameId})
+		conn.Close()
+	}
+	log.Printf("Player: %v succesfully joined game: %v", playerId, gameId)
+	conn.WriteJSON(map[string]string{"message": "Joined game successfully", "game_id": gameId})
 
-	conn.WriteJSON(http.StatusOK)
-	conn.Close()
+	// Start handling the connection in the game
+	go games[gameId].HandlePlayerConnection(playerId)
+
 }
