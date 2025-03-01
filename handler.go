@@ -59,7 +59,49 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Player: %v succesfully joined game: %v", playerId, gameId)
 	conn.WriteJSON(map[string]string{"message": "Joined game successfully", "game_id": gameId})
 
-	// Start handling the connection in the game
-	go games[gameId].HandlePlayerConnection(playerId)
+	// Extracting game for easy access
+	game := games[gameId]
+
+	// Extracing player for easy access
+	player := game.findPlayerById(playerId)
+
+	// Start listening for commands from client
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Printf("Error reading message from player %s: %v", playerId, err)
+			conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
+		}
+
+		// Handle the message
+		err = game.handlePlayerMessage(player, message)
+		if err == nil {
+			continue
+		}
+
+		// Error handling
+		switch e := err.(type) {
+		case *GameNotInLobbyError:
+			player.conn.WriteJSON(map[string]string{"error": "Game not in lobby", "player_id": gameId})
+		case *NotGameOwnerError:
+			player.conn.WriteJSON(map[string]string{"error": "Player not owner of game", "player_id": player.ID, "game_id": gameId})
+		case *GameNotStartedError:
+			player.conn.WriteJSON(map[string]string{"error": "Game is not started", "game_id": gameId})
+		case *InvalidArgumentError:
+			player.conn.WriteJSON(map[string]string{"error": "Invalid argument"})
+		case *NotPlayersTurnError:
+			player.conn.WriteJSON(map[string]string{"error": "Not players turn", "player_id": player.ID})
+		case *CardCannotBePlayedError:
+			player.conn.WriteJSON(map[string]string{
+				"error":                 "Card cannot be played",
+				"card_to_play":          e.CardToPlay.String(),
+				"card_on_playing_field": e.CardOnPlayingField.String(),
+			})
+		case *CardAlreadyPlayedError:
+			player.conn.WriteJSON(map[string]string{"error": "Card has already been played"})
+		default:
+			player.conn.WriteJSON(map[string]string{"error": "Internal server error"})
+		}
+	}
 
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -249,37 +248,6 @@ func (g *Game) AddPlayer(playerId string, playerConn *websocket.Conn) error {
 	g.Players = append(g.Players, player)
 
 	return nil
-}
-
-func (g *Game) HandlePlayerConnection(playerId string) {
-	player := g.findPlayerById(playerId)
-	if player == nil {
-		log.Printf("Player %s not found in game %s", playerId, g.ID)
-		return
-	}
-
-	for {
-		_, message, err := player.conn.ReadMessage()
-		if err != nil {
-			log.Printf("Error reading message from player %s: %v", playerId, err)
-			player.conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
-		}
-
-		// Handle the message
-		err = g.handlePlayerMessage(player, message)
-		if err == nil {
-			continue
-		}
-
-		// Error handling
-		switch err.(type) {
-		case *NotGameOwnerError:
-			player.conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
-		case *InvalidArgumentError:
-			player.conn.WriteJSON(map[string]string{"error": "Error reading message from player", "player_id": player.ID})
-		case *NotPlayersTurnError:
-		}
-	}
 }
 
 func (g *Game) Start() error {
