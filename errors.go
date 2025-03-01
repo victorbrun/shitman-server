@@ -20,6 +20,18 @@ func (e *GameNotInMapError) Error() string {
 	return "game is not in map"
 }
 
+type GameNotInLobbyError struct{ gameId string }
+
+func (e *GameNotInLobbyError) Error() string {
+	return fmt.Sprintf("game (%v) not in lobby", e.gameId)
+}
+
+type GameNotStartedError struct{ gameId string }
+
+func (e *GameNotStartedError) Error() string {
+	return fmt.Sprintf("game (%v) not started", e.gameId)
+}
+
 type PlayerAlreadyConnectedError struct{}
 
 func (e *PlayerAlreadyConnectedError) Error() string {

@@ -1,17 +1,26 @@
 import asyncio
 import time
+import json
 from websockets.asyncio.client import connect
 from datetime import datetime
 import threading
 
 
 async def player_a():
-    async with connect("ws://localhost:8080/ws?playerID=playerA") as websocket:
-        await websocket.send("Hello world!")
+    command = {
+        "player_id": "playerA",
+        "play_cards": [
+            {"rank": "Seven", "suit": "Hearts"},
+            {"rank": "King", "suit": "Spades"}
+        ],
+        "play_card_from_hidden_hand": True,
+        "play_random_card_from_deck": False
+    }
 
+    async with connect("ws://localhost:8080/ws?player_id=playerA") as websocket:
         ix = 0
         while ix < 10:
-            await websocket.send(f"The clock is {datetime.now()}")
+            await websocket.send(json.dumps(command))
 
             message = await websocket.recv()
             print(f"Player A recieved: {message}")
@@ -22,12 +31,20 @@ def player_a_wrapper():
     asyncio.run(player_a())
 
 async def player_b():
-    async with connect("ws://localhost:8080/ws?playerID=playerB") as websocket:
-        await websocket.send("Hello world!")
+    command = {
+        "player_id": "playerB",
+        "play_cards": [
+            {"rank": "Ace", "suit": "Hearts"},
+            {"rank": "King", "suit": "Spades"}
+        ],
+        "play_card_from_hidden_hand": False,
+        "play_random_card_from_deck": False
+    }
 
+    async with connect("ws://localhost:8080/ws?player_id=playerB&game_id=1") as websocket:
         ix = 0
         while ix < 10:
-            await websocket.send(f"Jag bryr mig inte vad klockan är!")
+            await websocket.send(json.dumps(command))
 
             message = await websocket.recv()
             print(f"Player B recieved: {message}")

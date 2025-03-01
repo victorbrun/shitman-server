@@ -131,24 +131,19 @@ type GameState struct {
 
 type Game struct {
 	ID         string
+	Owner      *Player
 	GameStates []*GameState
-	Status     GameState
+	Status     GameStatus
 }
 
-func NewGame(playerIDs []string) *Game {
+func NewGame(gameId string) *Game {
 	// Initlaises deck, playing field
 	deck := NewDeck()
 	pf := NewPlayingField(deck)
 
-	// Initilaises players with their respective hands
-	players := make([]*Player, len(playerIDs))
-	for ix, playerID := range playerIDs {
-		players[ix] = NewPlayer(playerID, deck)
-	}
-
 	// Manually creates the initial game state
 	initialGameState := &GameState{
-		Players:      players,
+		Players:      []*Player{},
 		PlayingField: pf,
 		Round:        0,
 	}
@@ -156,12 +151,59 @@ func NewGame(playerIDs []string) *Game {
 	// Constructs and returns the game
 	var gameStates []*GameState = []*GameState{initialGameState}
 	return &Game{
+		ID:         gameId,
+		Owner:      nil,
 		GameStates: gameStates,
+		Status:     InLobby,
 	}
 
 }
 
-// Increments the game g
-func (g *Game) IncrementGame(playedCards []PlayedCard) {
+func (g *Game) AddPlayer(playerId string) error {
+	// Initilaises player with hands
+	if g.Status != InLobby {
+		return &GameNotInLobbyError{g.ID}
+	}
 
+	// Extracting initial game state
+	if len(g.GameStates) != 1 {
+		return &GameNotInLobbyError{g.ID}
+	}
+	initialGameState := g.GameStates[0]
+
+	// Constructing player
+	player := NewPlayer(playerId, initialGameState.PlayingField.Deck)
+
+	// If no players in game, setting current player to owner
+	if len(initialGameState.Players) == 0 {
+		g.Owner = player
+	}
+
+	// Adding player to game
+	initialGameState.Players = append(initialGameState.Players, player)
+
+	return nil
+}
+
+func (g *Game) Start() error {
+	if g.Status != InLobby {
+		return &GameNotInLobbyError{gameId: g.ID}
+	}
+
+	g.Status = InGame
+
+	// TODO: set playing order
+
+	return nil
+}
+
+// Increments the game g
+func (g *Game) Increment(playedCards []PlayedCard) error {
+	if g.Status != InGame {
+		return &GameNotStartedError{gameId: g.ID}
+	}
+
+	// TODO: play cards
+
+	return nil
 }

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,7 +31,8 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var connections = make(map[string]*websocket.Conn)
+// var connections = make(map[string]*websocket.Conn)
+var games = make(map[string]*Game)
 
 func handleConnection(w http.ResponseWriter, r *http.Request) {
 	// Upgrade http connection to websocket connection
@@ -42,28 +43,31 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Extracts player ID and game id and creats new lobby if
-	// no id is given
+	// Extracts player ID
 	playerId := r.URL.Query().Get("player_id")
-	//gameId := r.URL.Query().Get("game_id")
-	connections[playerId] = conn
-
-	for {
-		// Read messages from the player
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Error reading message:", err)
-		}
-
-		// Parsing player command
-		var command PlayerCommand
-		err = json.Unmarshal(message, &command)
-		if err != nil {
-			log.Println("Error parsing message:", err)
-		}
-
-		log.Printf("Parsed command (%v): %+v\n", playerId, command)
-
-		conn.WriteJSON(http.StatusOK)
+	if playerId == "" {
+		log.Printf("No player ID specified. Closing connection")
+		conn.WriteJSON(http.StatusBadRequest)
+		conn.Close()
+		return
 	}
+
+	// Creates game if not exists
+	gameId := r.URL.Query().Get("game_id")
+	if gameId == "" {
+		gameId = uuid.New().String()
+		games[gameId] = NewGame(gameId)
+		log.Printf("Created game: %v by player: %v", gameId, playerId)
+	} else if _, ok := games[gameId]; !ok {
+		log.Printf("Game: %v does not exist. Closing connection", gameId)
+		conn.WriteJSON(http.StatusNotFound)
+		conn.Close()
+		return
+	}
+
+	// Add player to game
+	games[gameId].AddPlayer(playerId)
+
+	conn.WriteJSON(http.StatusOK)
+	conn.Close()
 }
