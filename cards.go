@@ -3,16 +3,17 @@ package main
 import (
 	"fmt"
 	"math/rand/v2"
+	"strings"
 )
 
 type Suit string
 type Rank string
 
 const (
-	Clubs    Suit = "Clubs ♣"
-	Diamonds Suit = "Diamonds ♦"
-	Hearts   Suit = "Hearts ♥"
-	Spades   Suit = "Spades ♠"
+	Clubs    Suit = "Clubs"
+	Diamonds Suit = "Diamonds"
+	Hearts   Suit = "Hearts"
+	Spades   Suit = "Spades"
 
 	Ace   Rank = "Ace"
 	Two   Rank = "Two"
@@ -28,6 +29,60 @@ const (
 	Queen Rank = "Queen"
 	King  Rank = "King"
 )
+
+func (s *Suit) UnmarshalJSON(b []byte) error {
+	str := strings.Trim(string(b), `"`)
+
+	switch {
+	case str == "Clubs":
+		*s = Clubs
+	case str == "Diamonds":
+		*s = Diamonds
+	case str == "Hearts":
+		*s = Hearts
+	case str == "Spades":
+		*s = Spades
+	default:
+		return &InvalidArgumentError{arg: str}
+	}
+	return nil
+}
+
+func (r *Rank) UnmarshalJSON(b []byte) error {
+	str := strings.Trim(string(b), `"`)
+
+	switch {
+	case str == "Ace" || str == "1":
+		*r = Ace
+	case str == "Two" || str == "2":
+		*r = Two
+	case str == "Tree" || str == "3":
+		*r = Three
+	case str == "Four" || str == "4":
+		*r = Four
+	case str == "Five" || str == "5":
+		*r = Five
+	case str == "Six" || str == "6":
+		*r = Six
+	case str == "Seven" || str == "7":
+		*r = Seven
+	case str == "Eight" || str == "8":
+		*r = Eight
+	case str == "Nine" || str == "9":
+		*r = Nine
+	case str == "Ten" || str == "10":
+		*r = Ten
+	case str == "Jack" || str == "11":
+		*r = Jack
+	case str == "Queen" || str == "12":
+		*r = Queen
+	case str == "King" || str == "13":
+		*r = King
+	default:
+		return &InvalidArgumentError{arg: str}
+	}
+	return nil
+}
 
 // Returns the numeric value of the
 // rank such that cards can be compared
@@ -73,32 +128,8 @@ type Card struct {
 	Suit Suit `json:"suit"`
 }
 
-type PlayedCard struct {
-	Card          Card `json:"card"`
-	PlayedBy      Player
-	PlayedInRound int
-}
-
 func (c Card) String() string {
 	return fmt.Sprintf("{%v of %v}", c.Rank, c.Suit)
-}
-
-// Playing the card c from hand onto pf
-func (c Card) Play(hand *Hand, pf *PlayingField, player string, round int) error {
-	cardIdxInHand, cardInHand := hand.Contains(c)
-	if !cardInHand {
-		return &CardNotInCollectionError{}
-	} else if _, cardOnField := pf.PlayedCards.Contains(c); cardOnField {
-		return &CardAlreadyPlayedError{}
-	}
-
-	// Removes the played card from hand
-	// TODO: is it worth doing atom transactions
-	// here to avoid a card being played but
-	// not removed from hand?
-	hand.Remove(cardIdxInHand)
-
-	return nil
 }
 
 type Collection struct {

@@ -19,6 +19,37 @@ type Player struct {
 	HiddenHand  *Hand
 }
 
+// Version of player that can be exposed to other players
+type PublicCensoredPlayer struct {
+	// Metadata
+	ID string
+
+	// Cards that can be shown for the public
+	// and the number of cards in the other hands
+	PrivateHandCount int
+	PublicHand       *Hand
+	HiddenHandCount  int
+}
+
+// Version of player that can be exposed to the player itself
+type PrivateCensoredPlayer struct {
+	// Metadata
+	ID string
+
+	// Cards that can be shown for the player
+	// and the number of cards in the other hands
+	PrivateHand     *Hand
+	PublicHand      *Hand
+	HiddenHandCount int
+}
+
+type PlayedCard struct {
+	Card          Card  `json:"card"`
+	PlayedAt      int64 // Unix timestamp for when card was played
+	PlayedBy      *Player
+	PlayedInRound int
+}
+
 func NewPlayer(id string, deck *Deck) *Player {
 	return &Player{
 		ID:          id,
@@ -28,25 +59,52 @@ func NewPlayer(id string, deck *Deck) *Player {
 	}
 }
 
-// Consors the hand such that the information can be
+func NewPlayedCard(card Card, playedBy *Player, playedInRound int) PlayedCard {
+	return PlayedCard{
+		Card:          card,
+		PlayedBy:      playedBy,
+		PlayedInRound: playedInRound,
+	}
+}
+
+// Player plays card from hand onto pf
+func (p *Player) Play(card Card, pf *PlayingField, round int) error {
+	// Checks that player can play card
+	idx, ok := p.PrivateHand.Contains(card)
+	if !ok {
+		return &CardNotInCollectionError{}
+	}
+
+	// Constructs PlayedCard and puts it onto pf
+	pc := NewPlayedCard(card, p, round)
+	pf.ActivePlayedCards = append(pf.ActivePlayedCards, pc)
+
+	// Removes card from hand
+	p.PrivateHand.Remove(idx)
+
+	// Returns without error
+	return nil
+}
+
+// Censors the hand such that the information can be
 // communicated to every participant in the game
-func (p *Player) PublicCensor() *Player {
-	return &Player{
-		ID:          p.ID,
-		PrivateHand: nil,
-		PublicHand:  p.PublicHand,
-		HiddenHand:  nil,
+func (p *Player) PublicCensor() *PublicCensoredPlayer {
+	return &PublicCensoredPlayer{
+		ID:               p.ID,
+		PrivateHandCount: p.PrivateHand.Size(),
+		PublicHand:       p.PublicHand,
+		HiddenHandCount:  p.HiddenHand.Size(),
 	}
 }
 
 // Censors the hands such that the information can be communicated
 // to the player owning this hand
-func (p *Player) PrivateCensor() *Player {
-	return &Player{
-		ID:          p.ID,
-		PrivateHand: p.PrivateHand,
-		PublicHand:  p.PublicHand,
-		HiddenHand:  nil,
+func (p *Player) PrivateCensor() *PrivateCensoredPlayer {
+	return &PrivateCensoredPlayer{
+		ID:              p.ID,
+		PrivateHand:     p.PrivateHand,
+		PublicHand:      p.PublicHand,
+		HiddenHandCount: p.HiddenHand.Size(),
 	}
 }
 

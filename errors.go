@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 type CardNotInCollectionError struct{}
 
 func (e *CardNotInCollectionError) Error() string {
@@ -22,4 +24,12 @@ type PlayerAlreadyConnectedError struct{}
 
 func (e *PlayerAlreadyConnectedError) Error() string {
 	return "player is already connected"
+}
+
+type InvalidArgumentError struct {
+	arg any
+}
+
+func (e *InvalidArgumentError) Error() string {
+	return fmt.Sprintf("following argument is not valid: %v", e.arg)
 }

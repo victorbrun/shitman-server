@@ -1,123 +1,37 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"log"
 	"net/http"
-	"slices"
-	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-type connectionManager struct {
-	mu                 sync.Mutex
-	GameToPlayers      map[string][]string
-	PlayerToGame       map[string]string
-	PlayerToConnection map[string]*websocket.Conn
-}
+type PlayerCommand struct {
+	// Metadata
+	ID string `json:"player_id"`
 
-func NewConnectionManager() *connectionManager {
-	gameToPlayers := make(map[string][]string)
-	playerToGame := make(map[string]string)
-	playerToConnection := make(map[string]*websocket.Conn)
+	// List of cards player wants to play.
+	// The order of the list defines the order
+	// in which the cards ought to be played
+	PlayCards []Card `json:"play_cards"`
 
-	return &connectionManager{
-		GameToPlayers:      gameToPlayers,
-		PlayerToGame:       playerToGame,
-		PlayerToConnection: playerToConnection,
-	}
-}
+	// If card from hidden hand should be played
+	// as last action
+	PlayCardFromHiddenHand bool `json:"play_card_from_hidden_hand"`
 
-// Returns the GameIDs for all games in the connection manager
-func (cm *connectionManager) Games() []string {
-	games := make([]string, 0)
-	for key, _ := range cm.GameToPlayers {
-		games = append(games, key)
-	}
-
-	return games
-}
-
-// Returns all PlayerIDs for players with an active connection in
-// the connection manager
-func (cm *connectionManager) Players() []string {
-	players := make([]string, 0)
-	for key, _ := range cm.PlayerToConnection {
-		players = append(players, key)
-	}
-
-	return players
-}
-
-func (cm *connectionManager) Add(gameId, playerId string, connection *websocket.Conn) error {
-	// Locking connectionManager to ensure data is not corrupted by multiple
-	// writes
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	// Checking if the game already exists
-	if !slices.Contains(cm.Games(), gameId) {
-		return &GameNotInMapError{}
-	}
-
-	// Check if player is already connected to game
-	if _, ok := cm.PlayerToGame[playerId]; ok {
-		return &PlayerAlreadyConnectedError{}
-	}
-
-	cm.GameToPlayers[gameId] = append(cm.GameToPlayers[gameId], playerId)
-	cm.PlayerToGame[playerId] = gameId
-	cm.PlayerToConnection[playerId] = connection
-
-	return nil
-}
-
-func (cm *connectionManager) Remove(playerId string) error {
-	// Locking connectionManager to ensure data is not corrupted by multiple
-	// writes
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	// Checking if player is connected
-	// if not we can return without modifications
-	if _, ok := cm.PlayerToConnection[playerId]; !ok {
-		return nil
-	}
-
-	// Removes player from GameToPlayers
-	// by finding it in list and removing it
-	game := cm.PlayerToGame[playerId]
-	playersInGame := cm.GameToPlayers[game]
-	idx := -1
-	for ix, playerInGame := range playersInGame {
-		if playerId == playerInGame {
-			idx = ix
-		}
-	}
-	cm.GameToPlayers[game] = slices.Delete(cm.GameToPlayers[game], idx, idx+1)
-
-	// Removes player in PlayerToGame
-	delete(cm.PlayerToGame, playerId)
-
-	// Removes player in PlayerToConnection
-	delete(cm.PlayerToConnection, playerId)
-
-	return nil
-}
-
-func (cm *connectionManager) Broadcast(message []byte, playerIds []string) {
-	for _, playerId := range playerIds {
-		connection := cm.PlayerToConnection[playerId]
-		connection.WriteMessage(websocket.TextMessage, message)
-	}
+	// If top most card from deck ought to be played.
+	// This can only be used when no other card can be played
+	// by the player.
+	PlayRandomCardFromDeck bool `json:"play_random_card_from_deck"`
 }
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var connections = NewConnectionManager()
+var connections = make(map[string]*websocket.Conn)
 
 func handleConnection(w http.ResponseWriter, r *http.Request) {
 	// Upgrade http connection to websocket connection
@@ -131,25 +45,25 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	// Extracts player ID and game id and creats new lobby if
 	// no id is given
 	playerId := r.URL.Query().Get("player_id")
-	gameId := r.URL.Query().Get("game_id")
-	if gameId == "" {
-		// Make new lobby logic
-	} else {
-		connections.Add(gameId, playerId, conn)
-	}
+	//gameId := r.URL.Query().Get("game_id")
+	connections[playerId] = conn
 
 	for {
 		// Read messages from the player
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
-			connections.Remove(playerId)
-			break
 		}
 
-		fmt.Printf("MESSAGE (%v): %v\n", playerId, string(message))
+		// Parsing player command
+		var command PlayerCommand
+		err = json.Unmarshal(message, &command)
+		if err != nil {
+			log.Println("Error parsing message:", err)
+		}
 
-		// Broadcasting message to every player except current one
-		connections.Broadcast(message, connections.Players())
+		log.Printf("Parsed command (%v): %+v\n", playerId, command)
+
+		conn.WriteJSON(http.StatusOK)
 	}
 }
