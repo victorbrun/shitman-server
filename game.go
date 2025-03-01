@@ -1,5 +1,11 @@
 package main
 
+import (
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
 type GameStatus int
 
 const (
@@ -11,7 +17,8 @@ const (
 
 type Player struct {
 	// Metadata
-	ID string
+	ID   string
+	conn *websocket.Conn
 
 	// Cards
 	PrivateHand *Hand
@@ -44,15 +51,17 @@ type PrivateCensoredPlayer struct {
 }
 
 type PlayedCard struct {
-	Card          Card  `json:"card"`
-	PlayedAt      int64 // Unix timestamp for when card was played
+	Card          Card      `json:"card"`
+	PlayedAt      time.Time // Unix timestamp for when card was played
 	PlayedBy      *Player
 	PlayedInRound int
 }
 
-func NewPlayer(id string, deck *Deck) *Player {
+func NewPlayer(id string, conn *websocket.Conn, deck *Deck) *Player {
 	return &Player{
-		ID:          id,
+		ID:   id,
+		conn: conn,
+
 		PublicHand:  NewHand(3, deck),
 		PrivateHand: NewHand(3, deck),
 		HiddenHand:  NewHand(3, deck),
@@ -62,6 +71,7 @@ func NewPlayer(id string, deck *Deck) *Player {
 func NewPlayedCard(card Card, playedBy *Player, playedInRound int) PlayedCard {
 	return PlayedCard{
 		Card:          card,
+		PlayedAt:      time.Now().UTC(),
 		PlayedBy:      playedBy,
 		PlayedInRound: playedInRound,
 	}
@@ -122,18 +132,19 @@ func NewPlayingField(deck *Deck) *PlayingField {
 	}
 }
 
-// Record of the state of a game at the end of a round
-type GameState struct {
-	Players      []*Player
-	PlayingField *PlayingField
-	Round        int
-}
-
 type Game struct {
-	ID         string
-	Owner      *Player
-	GameStates []*GameState
-	Status     GameStatus
+	// Metadata
+	ID string
+
+	// Player data
+	Owner   *Player
+	Players []*Player
+
+	// Game data
+	PlayingField *PlayingField
+	Status       GameStatus
+	Round        int
+	PlayOrder    []int
 }
 
 func NewGame(gameId string) *Game {
@@ -141,46 +152,37 @@ func NewGame(gameId string) *Game {
 	deck := NewDeck()
 	pf := NewPlayingField(deck)
 
-	// Manually creates the initial game state
-	initialGameState := &GameState{
-		Players:      []*Player{},
-		PlayingField: pf,
-		Round:        0,
-	}
-
 	// Constructs and returns the game
-	var gameStates []*GameState = []*GameState{initialGameState}
 	return &Game{
-		ID:         gameId,
-		Owner:      nil,
-		GameStates: gameStates,
-		Status:     InLobby,
+		ID: gameId,
+
+		Owner:   nil,
+		Players: []*Player{},
+
+		PlayingField: pf,
+		Status:       InLobby,
+		Round:        0,
+		PlayOrder:    []int{},
 	}
 
 }
 
-func (g *Game) AddPlayer(playerId string) error {
+func (g *Game) AddPlayer(playerId string, playerConn *websocket.Conn) error {
 	// Initilaises player with hands
-	if g.Status != InLobby {
+	if g.Status != InLobby || g.Round != 0 {
 		return &GameNotInLobbyError{g.ID}
 	}
-
-	// Extracting initial game state
-	if len(g.GameStates) != 1 {
-		return &GameNotInLobbyError{g.ID}
-	}
-	initialGameState := g.GameStates[0]
 
 	// Constructing player
-	player := NewPlayer(playerId, initialGameState.PlayingField.Deck)
+	player := NewPlayer(playerId, playerConn, g.PlayingField.Deck)
 
 	// If no players in game, setting current player to owner
-	if len(initialGameState.Players) == 0 {
+	if len(g.Players) == 0 {
 		g.Owner = player
 	}
 
 	// Adding player to game
-	initialGameState.Players = append(initialGameState.Players, player)
+	g.Players = append(g.Players, player)
 
 	return nil
 }
@@ -204,6 +206,12 @@ func (g *Game) Increment(playedCards []PlayedCard) error {
 	}
 
 	// TODO: play cards
+
+	return nil
+}
+
+func (g *Game) Run() error {
+	// todo
 
 	return nil
 }
